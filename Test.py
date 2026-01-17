@@ -1,13 +1,9 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import pipeline
 import torch
 
-model_name = "microsoft/Phi-3.5-mini-instruct"
+# Set device to MPS
+device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    device_map="auto",
-    torch_dtype=torch.float16,   # or float32 on M1
-    load_in_4bit=True            # OK for DEBUG
-)
-model.eval()
+model = pipeline("text-generation", model="microsoft/Phi-3.5-mini-instruct", device=device)
+response = model("Xin chào ngày mới")
+print(response)
