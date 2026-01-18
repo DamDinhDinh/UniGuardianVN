@@ -1,6 +1,5 @@
-from src.prompt_data import PromptData
-from src.utils import get_config, get_default_config
 import re
+import random
 
 
 class MaskProcessor:
@@ -15,43 +14,39 @@ class MaskProcessor:
 
     def get_masked_prompts(self, tokenizer, prompt):
         instruction = prompt.prompt
-        prompt = tokenizer.apply_chat_template(prompt.create_message(), add_generation_prompt=True, return_tensors="pt",
-                                               tokenize=False)
         instruction_splited = re.split(rf'(\s|{tokenizer.eos_token[0]}.*?{tokenizer.eos_token[-1]})', instruction)
-        prompt_splited = re.split(rf'(\s|{tokenizer.eos_token[0]}.*?{tokenizer.eos_token[-1]})', prompt)
-
-        config = get_config("")
-
         print(instruction)
         print(instruction_splited)
-        print(prompt_splited)
 
-        begin_index = next((i for i in range(len(prompt_splited) - len(instruction_splited) + 1) if
-                            prompt_splited[i:i + len(instruction_splited)] == instruction_splited), -1)
-        # mask_indices_list = [[i, i + 1] for i in range(begin_index, begin_index + len(instruction_splited))]
         available_index = []
-        for i in range(begin_index, begin_index + len(instruction_splited)):
-            word = prompt_splited[i]
+        for i in range(0, len(instruction_splited)):
+            word = instruction_splited[i]
             if len(word) > 1:
                 available_index.append(i)
             elif word.isprintable() and not word.isspace():
                 available_index.append(i)
 
-        K = config.detection.num_masks_per_instruction
-        if isinstance(K, float):
-            K = int(len(available_index) ** K)
-        K = min(min(max(1, K), config.detection.max_masks_per_instruction), len(available_index))
+        available_len = len(available_index)
+        num_masked_prompt = self.num_masked_instructions * available_len
+        num_masks_per_prompt = int(min(max(1, round(available_len ** self.num_masks_per_instruction)),
+                                       self.max_masks_per_instruction))
 
-        num_masked_instructions = config.detection.num_masked_instructions
-        if isinstance(num_masked_instructions, float):
-            num_masked_instructions = int(len(available_index) * num_masked_instructions)
-        num_masked_instructions = max(1, num_masked_instructions)
+        print("Prompt: ", instruction)
+        print("Length of words: ", available_len)
+        print("Number of masked prompt: ", num_masked_prompt)
+        print("Number of masked prompt per instruction: ", num_masks_per_prompt)
 
-        print("len:", len(available_index), "K:", K, "num_masked_instructions:", num_masked_instructions)
+        masked_prompts = []
+        # masked_prompts.append(instruction)
+        for i in range(num_masked_prompt):
+            masked_prompt = self.get_masked_prompt(instruction_splited, available_index, num_masks_per_prompt)
+            masked_prompts.append(masked_prompt)
 
-        # len_prompt = len(prompt.prompt)
-        # num_masked_prompt = self.num_masked_instructions * len_prompt
-        # num_masks_per_prompt = min(max(1, len_prompt ** self.num_masks_per_instruction), self.max_masks_per_instruction)
-        # print("Length of prompts: ", len_prompt)
-        # print("Number of masked prompt: ", num_masked_prompt)
-        # print("Number of masked prompt per instruction: ", num_masks_per_prompt)
+        return masked_prompts
+
+    def get_masked_prompt(self, instruction_splited, available_index, m):
+        masked_prompt = instruction_splited.copy()
+        to_mask = random.sample(available_index, min(m, len(available_index)))
+        for idx in to_mask:
+            masked_prompt[idx] = self.mask
+        return "".join(masked_prompt)
