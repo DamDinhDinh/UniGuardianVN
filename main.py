@@ -37,46 +37,31 @@ input_ids = inputs["input_ids"][0]
 print("Input ids: ", input_ids)
 
 masked_processor = MaskProcessor()
-masked_prompts = masked_processor.get_masked_prompts(tokenizer, prompt_data)
+masked_data = masked_processor.get_masked_prompts(tokenizer, prompt_data)
 
 model = model_loader.get_model()
 
 with torch.no_grad():
-    generated_ids = model.generate(
-        **inputs,
-        max_new_tokens=120,
-        do_sample=True,
-        temperature=0.1,
-        return_dict_in_generate=True,
-        output_logits=True,
+    base_out = model(
+        input_ids=inputs["input_ids"],
+        attention_mask=inputs.get("attention_mask"),
     )
+    base_logits = base_out.logits[0, -1]
 
-    prompt_length = inputs.input_ids.shape[1]
-    new_generated_ids = generated_ids.sequences[0, prompt_length:]
-
-    # Only the newly generated text (clean answer)
-    generated_text = tokenizer.decode(new_generated_ids, skip_special_tokens=True)
-
-    # Logging examples
-    log = {}
-    # log["prompt"] = prompt_data.prompt
-    # log["base_generated_ids"] = new_generated_ids.tolist()  # list of ints — easy to save/json
-    # log["base_generation"] = generated_text.strip()
-    # log["base_logits_len"] = len(generated_ids.logits)
-    # log["base_logits"] = base_out.logits
-    print("base_logits_len", len(generated_ids.logits))
-    for i, prompt in enumerate(masked_prompts):
-        masked_inputs = tokenizer(prompt, return_tensors="pt").to(model_loader.device)
+    print("base_logits_len", len(base_logits))
+    for i, masked in enumerate(masked_data):
+        masked_inputs = tokenizer(masked.prompt, return_tensors="pt").to(model_loader.device)
         masked_input_ids = masked_inputs["input_ids"][0]
-        masked_out = model.generate(
-            **inputs,
-            max_new_tokens=120,
-            do_sample=True,
-            temperature=0.1,
-            return_dict_in_generate=True,
-            output_logits=True,
+        masked_out = model(
+            input_ids=masked_inputs["input_ids"],
+            attention_mask=masked_inputs.get("attention_mask"),
         )
-        #     log[f"masked_{i}_logits_len"] = len(masked_out.logits)
-        print(f"masked_{i}_logits_len", len(generated_ids.logits))
+        masked_logits = masked_out.logits[0, -1]
+        print(f"masked_{i}_logits_len", len(masked_logits))
 
-    # print(log)
+        print(f"mask {i} masked words = {masked.words} masked indexes = {masked.indexes} deviation=",
+              torch.mean(
+                  (F.softmax(base_logits, dim=-1)
+                   - F.softmax(masked_logits, dim=-1)) ** 2
+              ).item()
+              )

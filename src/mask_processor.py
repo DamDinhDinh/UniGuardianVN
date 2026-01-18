@@ -1,6 +1,8 @@
 import re
 import random
 
+from src.masked_data import MaskedData
+
 
 class MaskProcessor:
     def __init__(self, mask="<unk>",
@@ -15,8 +17,6 @@ class MaskProcessor:
     def get_masked_prompts(self, tokenizer, prompt):
         instruction = prompt.prompt
         instruction_splited = re.split(rf'(\s|{tokenizer.eos_token[0]}.*?{tokenizer.eos_token[-1]})', instruction)
-        print(instruction)
-        print(instruction_splited)
 
         available_index = []
         for i in range(0, len(instruction_splited)):
@@ -47,6 +47,10 @@ class MaskProcessor:
     def get_masked_prompt(self, instruction_splited, available_index, m):
         masked_prompt = instruction_splited.copy()
         to_mask = random.sample(available_index, min(m, len(available_index)))
+        masked_words = []
+        masked_indexes = []
         for idx in to_mask:
+            masked_words.append(masked_prompt[idx])
             masked_prompt[idx] = self.mask
-        return "".join(masked_prompt)
+            masked_indexes.append(idx)
+        return MaskedData("".join(masked_prompt), masked_words, masked_indexes)
