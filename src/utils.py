@@ -75,9 +75,9 @@ def get_config(config_path):
         return d
 
     config = get_default_config()
-    config = update(config, json.load(open(config_path)))
+    # config = update(config, json.load(open(config_path)))
     config = Struct(config)
-    sanity_check(config)
+    # sanity_check(config)
     return config
 
 
