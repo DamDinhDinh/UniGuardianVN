@@ -1,11 +1,11 @@
 import numpy as np
 
 
-class PromptDetector:
+class PromptAttackDetector:
     def __init__(self, threshold=3.0):
         self.threshold = threshold
 
-    def get_z_scores(self, S_list):
+    def process_data(self, S_list):
         S = np.array(S_list, dtype=np.float32)
         mean_S = S.mean()
         std_S = S.std()
@@ -13,8 +13,13 @@ class PromptDetector:
 
         z_scores = (S - mean_S) / (std_S + eps)
         is_invalid_std_S = std_S < 1e-6
-        print(f"std_S:", std_S, "is valid", not is_invalid_std_S)
+
         if is_invalid_std_S:
             z_scores = np.zeros_like(S)
 
-        return z_scores
+        return z_scores, mean_S, std_S
+
+    def detect_by_max_z(self, z_scores):
+        z_max = float(z_scores.max())
+        is_poisoned = z_max > self.threshold
+        return z_max, self.threshold, is_poisoned

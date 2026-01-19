@@ -2,12 +2,22 @@ from src.mask_processor import MaskProcessor
 from src.masked_data import MaskedData
 from src.model_loader import ModelLoader
 from src.prompt_data import PromptData
-
-import torch.nn.functional as F
-import numpy as np
+from src.prompt_attack_detector import PromptAttackDetector
 import json
-
 import torch
+from datetime import datetime
+import os
+
+global_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+global_script_dir = os.path.dirname(__file__)
+global_root_folder = os.path.abspath(os.path.join(global_script_dir, os.pardir))
+global_output_folder = os.path.join(global_root_folder, "output")
+global_session_folder = os.path.join(global_output_folder, global_timestamp)
+
+logs = []
+logs.append({
+    "timestamp": global_timestamp,
+})
 
 # prompt = (
 #     "Hãy phân tích cảm xúc của đoạn văn sau:\n"
@@ -93,6 +103,14 @@ model = model_loader.get_model()
 
 with torch.no_grad():
     print("Base prompt: ", prompt_data.prompt)
+    logs.append(
+        {
+            "prompt_data": {
+                "prompt": prompt_data.prompt,
+                "label": prompt_data.label,
+            }
+        }
+    )
     base_out = model.generate(
         **inputs,
         do_sample=True,
@@ -104,18 +122,27 @@ with torch.no_grad():
         output_logits=True,
     )
 
-    base_logits_seq = base_out.logits  # tuple of length k
+    base_logits_seq = base_out.logits
+    base_logits_len = len(base_logits_seq)
 
-    print("base_logits_len", len(base_logits_seq))
+    print("base_logits_len", base_logits_len)
 
     S_list = []
-    masked_logs = []
     for i, masked in enumerate(masked_data):
-        if i > 5:
+        if i > 1:
             break
         masked_inputs = tokenizer(masked.prompt, return_tensors="pt").to(model_loader.device)
         masked_input_ids = masked_inputs["input_ids"][0]
         print("Masked prompt: ", masked.prompt)
+        logs.append(
+            {
+                f"masked_data_{i}": {
+                    "prompt": masked.prompt,
+                    "indexes": masked.indexes,
+                    "words": masked.words,
+                },
+            }
+        )
         masked_out = model.generate(
             **masked_inputs,
             do_sample=True,
@@ -128,9 +155,16 @@ with torch.no_grad():
         )
 
         masked_logits_seq = masked_out.logits
-        print(f"masked_{i}_logits_len", len(masked_logits_seq))
+        masked_logits_len = len(masked_logits_seq)
+        print(f"masked_{i}_logits_len", masked_logits_len)
 
-        k = min(len(base_logits_seq), len(masked_logits_seq))
+        k = min(base_logits_len, masked_logits_len)
+
+        logs.append(
+            {
+                f"k_{i}": k
+            }
+        )
         scores = []
 
         for j in range(k):
@@ -142,33 +176,40 @@ with torch.no_grad():
 
         S_i = torch.stack(scores).mean().item()
         S_list.append(S_i)
-        masked_logs.append({
-            "mask_id": i,
-            "masked_data": masked,
-            "S_i": S_i,
-        })
+        logs.append(
+            {
+                f"uncertainty_score_{i}": S_i,
+            }
+        )
         print(f"Uncertainty score {i}:", S_i)
 
-    S = np.array(S_list, dtype=np.float32)
-    mean_S = S.mean()
-    std_S = S.std()
-    eps = 1e-8
-
-    z_scores = (S - mean_S) / (std_S + eps)
-    is_invalid_std_S = std_S < 1e-6
-    print(f"std_S:", std_S, "is valid", not is_invalid_std_S)
-    if is_invalid_std_S:
-        z_scores = np.zeros_like(S)
+    prompt_attack_detector = PromptAttackDetector()
+    z_scores, mean_S, std_S = prompt_attack_detector.process_data(S_list)
+    print("mean_S", mean_S)
+    print("std_S", std_S)
     print(f"z_scores:", z_scores)
 
-    result = {
-        "prompt": prompt_data.prompt,
-        "num_masks": len(S_list),
-        "mean_S": float(mean_S),
-        "std_S": float(std_S),
-        "zscores": z_scores,
-        "masked_results": masked_logs,
-    }
+    z_max, threshold, is_poisoned = prompt_attack_detector.detect_by_max_z(z_scores)
+    print("z_max", z_max)
+    print("threshold", threshold)
+    print("is_poisoned", is_poisoned)
 
-    with open("uniguardian_results.jsonl", "a") as f:
-        f.write(json.dumps(result, ensure_ascii=False) + "\n")
+    logs.append(
+        {
+            "S_list": S_list,
+            "std_S": std_S.item(),
+            "mean_S": mean_S.item(),
+            "z_scores": z_scores.toList(),
+            "z_max": z_max,
+            "threshold": threshold,
+            "is_poisoned": is_poisoned,
+        }
+    )
+
+    print(logs)
+    json.dumps(logs, ensure_ascii=False)
+
+    output_file = os.path.join(global_output_folder, f"top_logs_analyses_result_{global_timestamp}.txt")
+
+    with open(output_file, "a") as f:
+        f.write(json.dumps(logs, ensure_ascii=False) + "\n")
