@@ -6,13 +6,16 @@ from src.prompt_attack_detector import PromptAttackDetector
 import json
 import torch
 from datetime import datetime
+from pathlib import Path
 import os
 
 global_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-global_script_dir = os.path.dirname(__file__)
+global_script_dir =  Path(__file__).resolve()
 global_root_folder = os.path.abspath(os.path.join(global_script_dir, os.pardir))
 global_output_folder = os.path.join(global_root_folder, "output")
 global_session_folder = os.path.join(global_output_folder, global_timestamp)
+
+print(global_session_folder)
 
 logs = []
 logs.append({
@@ -44,10 +47,10 @@ prompt_data = PromptData(text_poisoned, 1)
 model_loader = ModelLoader()
 tokenizer = model_loader.get_tokenizer()
 
-inputs = tokenizer(prompt_data.prompt, return_tensors="pt").to(model_loader.device)
-print("Input: ", inputs)
-input_ids = inputs["input_ids"][0]
-print("Input ids: ", input_ids)
+base_inputs = tokenizer(prompt_data.prompt, return_tensors="pt").to(model_loader.device)
+print("Input: ", base_inputs)
+base_input_ids = base_inputs["input_ids"][0]
+print("Input ids: ", base_input_ids)
 
 masked_processor = MaskProcessor()
 masked_data = [
@@ -112,7 +115,7 @@ with torch.no_grad():
         }
     )
     base_out = model.generate(
-        **inputs,
+        **base_inputs,
         do_sample=True,
         temperature=0.1,
         top_p=1.0,
@@ -125,7 +128,13 @@ with torch.no_grad():
     base_logits_seq = base_out.logits
     base_logits_len = len(base_logits_seq)
 
+    base_prompt_length = base_inputs.input_ids.shape[1]
+    base_generated_ids = base_out.sequences[0, base_prompt_length:]
+    base_generated_text = tokenizer.decode(base_generated_ids, skip_special_tokens=True)
+
     print("base_logits_len", base_logits_len)
+    print("Base response: \n", base_generated_text)
+    print("\n")
 
     S_list = []
     for i, masked in enumerate(masked_data):
@@ -133,7 +142,8 @@ with torch.no_grad():
             break
         masked_inputs = tokenizer(masked.prompt, return_tensors="pt").to(model_loader.device)
         masked_input_ids = masked_inputs["input_ids"][0]
-        print("Masked prompt: ", masked.prompt)
+        print(f"Masked prompt {i}: \n", masked.prompt)
+        print("\n")
         logs.append(
             {
                 f"masked_data_{i}": {
@@ -156,7 +166,20 @@ with torch.no_grad():
 
         masked_logits_seq = masked_out.logits
         masked_logits_len = len(masked_logits_seq)
+
+        masked_prompt_length = masked_inputs.input_ids.shape[1]
+        masked_generated_ids = masked_out.sequences[0, base_prompt_length:]
+        masked_generated_text = tokenizer.decode(masked_generated_ids, skip_special_tokens=True)
+
         print(f"masked_{i}_logits_len", masked_logits_len)
+        print(f"Masked response {i}: \n", masked_generated_text)
+        print("\n")
+
+        logs.append(
+            {
+                f"masked_response_{i}": masked_generated_text
+            }
+        )
 
         k = min(base_logits_len, masked_logits_len)
 
@@ -199,7 +222,7 @@ with torch.no_grad():
             "S_list": S_list,
             "std_S": std_S.item(),
             "mean_S": mean_S.item(),
-            "z_scores": z_scores.toList(),
+            "z_scores": z_scores.tolist(),
             "z_max": z_max,
             "threshold": threshold,
             "is_poisoned": is_poisoned,
@@ -209,7 +232,11 @@ with torch.no_grad():
     print(logs)
     json.dumps(logs, ensure_ascii=False)
 
-    output_file = os.path.join(global_output_folder, f"top_logs_analyses_result_{global_timestamp}.txt")
+    if not os.path.exists(global_session_folder):
+        os.makedirs(global_session_folder)
+
+    output_file = os.path.join(global_session_folder, f"uniguardian_results_{global_timestamp}.jsonl")
+    print("output_file", output_file)
 
     with open(output_file, "a") as f:
         f.write(json.dumps(logs, ensure_ascii=False) + "\n")
