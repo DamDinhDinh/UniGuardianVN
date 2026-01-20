@@ -5,11 +5,6 @@ from src.output_processor import *
 from src.data_loader import DataLoader
 import torch
 
-import os
-if os.path.exists("/content"):
-    from google.colab import drive
-    drive.mount("/content/drive")
-
 output_processor = OutputProcessor()
 
 data_loader = DataLoader()
