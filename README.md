@@ -6,12 +6,8 @@ The implementation for paper "UniGuardian: A Unified Defense for Detecting Promp
 ## Quick Start
 Create a new environment and install the dependencies.
 ```
-conda create -n uniguardian python=3.10
-conda activate uniguardian 
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
-
-Here’s an example command to execute the program. Make sure to replace the placeholders with actual paths.
-```
-python main.py --config_path ./config.json
-```
+Run main.py
