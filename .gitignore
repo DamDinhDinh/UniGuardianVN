@@ -2,3 +2,10 @@
 /.idea
 .idea/
 src/__*
+/output
+/venv
+.venv
+# Ignore all python bytecode files
+*.pyc
+# Ignore all __pycache__ directories
+__pycache__/
