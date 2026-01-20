@@ -4,7 +4,6 @@ import torch
 DEFAULT_DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 MODEL_NAME = "microsoft/Phi-3.5-mini-instruct"
 
-
 class ModelLoader:
     def __init__(self, model_name=MODEL_NAME, device = DEFAULT_DEVICE):
         self.model_name = model_name

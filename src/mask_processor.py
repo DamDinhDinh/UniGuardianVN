@@ -3,7 +3,6 @@ import random
 
 from src.masked_data import MaskedData
 
-
 class MaskProcessor:
     def __init__(self, mask="<unk>",
                  num_masked_instructions=2,
