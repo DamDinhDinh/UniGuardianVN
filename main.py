@@ -3,14 +3,22 @@ from src.model_loader import ModelLoader
 from src.prompt_attack_detector import PromptAttackDetector
 from src.output_processor import *
 from src.data_loader import DataLoader
+from src.utils import *
 import torch
+
+args = parse_args()
 
 output_processor = OutputProcessor()
 
 data_loader = DataLoader()
-prompt_list = data_loader.get_train_prompt()
 
-model_loader = ModelLoader()
+prompt_list = data_loader.get_train_prompt()
+if args.max_prompts is not None:
+    prompt_list = prompt_list[:args.max_prompts]
+
+model_loader = ModelLoader() if args.model is None \
+    else ModelLoader(args.model)
+
 tokenizer = model_loader.get_tokenizer()
 model = model_loader.get_model()
 masked_processor = MaskProcessor()
@@ -51,7 +59,15 @@ for iterator, prompt_data in enumerate(prompt_list):
 
         S_list = []
         masked_responses = []
-        masked_data = masked_processor.get_masked_prompts(tokenizer, prompt_data)
+        masked_data = masked_processor.get_masked_prompts(
+            tokenizer,
+            prompt_data
+        ) if args.num_masks is None \
+            else masked_processor.get_masked_prompts(
+            tokenizer,
+            prompt_data
+        )[:args.num_masks]
+
         for i, masked in enumerate(masked_data):
             masked_inputs = tokenizer(masked.prompt, return_tensors="pt").to(model_loader.device)
             masked_input_ids = masked_inputs["input_ids"][0]
