@@ -16,9 +16,6 @@ model = model_loader.get_model()
 masked_processor = MaskProcessor()
 
 for iterator, prompt_data in enumerate(prompt_list):
-    if iterator > 1:
-        break
-
     print(f"Input {iterator}: label", prompt_data.label)
 
     base_inputs = tokenizer(prompt_data.prompt, return_tensors="pt").to(model_loader.device)
@@ -56,8 +53,6 @@ for iterator, prompt_data in enumerate(prompt_list):
         masked_responses = []
         masked_data = masked_processor.get_masked_prompts(tokenizer, prompt_data)
         for i, masked in enumerate(masked_data):
-            if i > 1:
-                break
             masked_inputs = tokenizer(masked.prompt, return_tensors="pt").to(model_loader.device)
             masked_input_ids = masked_inputs["input_ids"][0]
             print(f"Masked prompt {i}: \n", masked.prompt)
@@ -126,8 +121,6 @@ for iterator, prompt_data in enumerate(prompt_list):
         print("is_missed", is_missed)
 
         for i, masked in enumerate(masked_data):
-            if i > 1:
-                break
             output_processor.add_data(
                 {
                     # Prompt-level
