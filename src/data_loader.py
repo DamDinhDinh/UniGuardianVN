@@ -1,5 +1,5 @@
 from datasets import load_dataset
-from prompt_data import *
+from src.prompt_data import PromptData
 
 DEFAULT_DATA_SET = "deepset/prompt-injections"
 
@@ -13,6 +13,7 @@ class DataLoader:
 
     def get_train_prompt(self):
         train_set = self.dataset["train"]
+        print(f"get_train_prompt {train_set.data[0]}")
         prompt_data_list = []
         for data in train_set:
             prompt = PromptData(data["text"], data["label"])
@@ -22,6 +23,7 @@ class DataLoader:
 
     def get_test_prompt(self):
         test_set = self.dataset["test"]
+        print(f"get_test_prompt {test_set.data[0]}")
         prompt_data_list = []
         for data in test_set:
             prompt = PromptData(data["text"], data["label"])
