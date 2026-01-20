@@ -24,4 +24,18 @@ def parse_args():
         help="Limit number of masked prompts per prompt (optional)"
     )
 
+    parser.add_argument(
+        "--max_batch_size",
+        type=int,
+        default=None,
+        help="Limit number of batch size masked prompts (optional)"
+    )
+
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=None,
+        help="Limit number of generated tokens (optional)"
+    )
+
     return parser.parse_args()

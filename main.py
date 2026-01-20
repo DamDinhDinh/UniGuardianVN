@@ -6,7 +6,16 @@ from src.data_loader import DataLoader
 from src.utils import *
 import torch
 
+MASK_BATCH_SIZE = 8
+MAX_NEW_TOKENS = 64
+
 args = parse_args()
+
+if args.max_batch_size is not None:
+    MASK_BATCH_SIZE = args.max_batch_size
+
+if args.max_new_tokens is not None:
+    MAX_NEW_TOKENS = args.max_new_tokens
 
 output_processor = OutputProcessor()
 
@@ -31,35 +40,6 @@ for iterator, prompt_data in enumerate(prompt_list):
     base_input_ids = base_inputs["input_ids"][0]
     with torch.no_grad():
         print("Base prompt: ", prompt_data.prompt)
-        base_out = model.generate(
-            **base_inputs,
-            do_sample=True,
-            temperature=0.1,
-            top_p=1.0,
-            max_new_tokens=64,
-            min_new_tokens=8,
-            return_dict_in_generate=True,
-            output_logits=True,
-        )
-
-        base_logits_seq = base_out.logits
-        base_logits_len = len(base_logits_seq)
-
-        base_prompt_length = base_inputs.input_ids.shape[1]
-        full_generated_ids = base_out.sequences[0]
-        base_generated_ids = full_generated_ids[base_prompt_length:]
-        base_generated_text = tokenizer.decode(
-            base_generated_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False
-        ).strip()
-
-        print("base_logits_len", base_logits_len)
-        print("Base response: \n", base_generated_text)
-        print("\n")
-
-        S_list = []
-        masked_responses = []
         masked_data = masked_processor.get_masked_prompts(
             tokenizer,
             prompt_data
@@ -68,64 +48,49 @@ for iterator, prompt_data in enumerate(prompt_list):
             tokenizer,
             prompt_data
         )[:args.num_masks]
-        print("masked data length", len(masked_data))
 
-        for i, masked in enumerate(masked_data):
-            masked_inputs = tokenizer(masked.prompt, return_tensors="pt").to(model_loader.device)
-            masked_input_ids = masked_inputs["input_ids"][0]
-            print(f"Masked prompt {i}: \n", masked.prompt)
-            print("\n")
+        all_prompts = [prompt_data.prompt] + [m.prompt for m in masked_data]
 
-            masked_prompt_len = masked_inputs.input_ids.shape[1]
-            forced_ids = torch.cat(
-                [
-                    masked_inputs.input_ids,
-                    base_generated_ids.unsqueeze(0)
-                ],
-                dim=1
-            )
-            attention_mask = torch.ones_like(forced_ids)
-            masked_out = model(
-                input_ids=forced_ids,
+        inputs = tokenizer(
+            all_prompts,
+            return_tensors="pt",
+            padding=True
+        ).to(model_loader.device)
+
+        input_ids = inputs.input_ids
+        attention_mask = inputs.attention_mask
+
+        past_key_values = None
+        S = torch.zeros(len(masked_data), device=model_loader.device)
+
+        for step in range(MAX_NEW_TOKENS):
+            outputs = model(
+                input_ids=input_ids if past_key_values is None else input_ids[:, -1:],
                 attention_mask=attention_mask,
+                past_key_values=past_key_values,
+                use_cache=True,
                 return_dict=True
             )
-            masked_logits_seq = masked_out.logits[
-                :, masked_prompt_len - 1: masked_prompt_len - 1 + base_logits_len, :
-            ]
 
-            masked_logits_len = len(masked_logits_seq)
+            logits = outputs.logits[:, -1, :]  # (1 + N, vocab)
+            past_key_values = outputs.past_key_values
 
-            masked_prompt_length = masked_inputs.input_ids.shape[1]
-            full_masked_generated_ids = masked_out.sequences[0]
-            masked_generated_ids = full_masked_generated_ids[masked_prompt_length:]
-            masked_generated_text = tokenizer.decode(
-                masked_generated_ids,
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False
-            ).strip()
-            masked_responses.append(masked_generated_text)
+            base_logits = logits[0]
+            base_token = torch.argmax(base_logits)
 
-            print(f"masked_{i}_logits_len", masked_logits_len)
-            print(f"Masked response {i}: \n", masked_generated_text)
-            print("\n")
+            for i in range(len(masked_data)):
+                Li = logits[i + 1, base_token]
+                Lb = base_logits[base_token]
+                S[i] += (torch.sigmoid(Li) - torch.sigmoid(Lb)) ** 2
 
-            k = min(base_logits_len, masked_logits_len)
-            scores = []
+            # force SAME token for everyone
+            next_tokens = base_token.unsqueeze(0).repeat(input_ids.size(0), 1)
+            input_ids = torch.cat([input_ids, next_tokens], dim=1)
+            attention_mask = torch.cat(
+                [attention_mask, torch.ones_like(next_tokens)], dim=1
+            )
 
-            base_gen_ids = base_out.sequences[0][-base_logits_len:]
-            for j in range(k):
-                token_id = base_generated_ids[j].item()
-
-                Lb_j = base_logits_seq[j][0, token_id]
-                Li_j = masked_logits_seq[0, j, token_id]
-
-                diff = torch.sigmoid(Li_j) - torch.sigmoid(Lb_j)
-                scores.append(diff ** 2)
-
-            S_i = torch.stack(scores).mean().item()
-            S_list.append(S_i)
-            print(f"Uncertainty score {i}:", S_i)
+        S_list = (S / MAX_NEW_TOKENS).tolist()
 
         prompt_attack_detector = PromptAttackDetector()
         z_scores, mean_S, std_S = prompt_attack_detector.process_data(S_list)
@@ -153,14 +118,12 @@ for iterator, prompt_data in enumerate(prompt_list):
                     "prompt_id": iterator,
                     "label": prompt_data.label,
                     "base_prompt": prompt_data.prompt,
-                    "base_response": base_generated_text,
 
                     # Mask-level
                     "mask_id": i,
                     "masked_prompt": masked.prompt,
                     "masked_words": masked.words,
                     "masked_indexes": masked.indexes,
-                    "masked_response": masked_responses[i],
 
                     # UniGuardian math
                     "S_i": S_list[i],
