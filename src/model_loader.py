@@ -17,11 +17,14 @@ class ModelLoader:
         self.device = device
 
     def get_model(self):
+        device_map="auto" if self.device == "cuda" else None
         model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             torch_dtype=torch.float16 if self.device == "cuda" else None,
-            device_map="auto" if self.device == "cuda" else None,
+            device_map=device_map,
         )
+        if device_map is None:
+            model.to(self.device)
         model.eval()
 
         return model
