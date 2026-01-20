@@ -11,7 +11,13 @@ from sklearn.metrics import roc_curve, precision_recall_curve
 global_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 global_script_dir = Path(__file__).parent.resolve()
 global_root_folder = os.path.abspath(os.path.join(global_script_dir, os.pardir))
-global_output_folder = os.path.join(global_root_folder, "output")
+global_output_folder = None
+# Colab-safe output (Google Drive)
+if os.path.exists("/content/drive"):
+    global_output_folder = "/content/drive/MyDrive/uniguardian_output"
+else:
+    global_output_folder = os.path.join(global_root_folder, "output")
+
 global_session_folder = os.path.join(global_output_folder, global_timestamp)
 
 class OutputProcessor:

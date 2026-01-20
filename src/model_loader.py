@@ -1,7 +1,14 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
-DEFAULT_DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+DEFAULT_DEVICE = None
+if torch.cuda.is_available():
+    DEFAULT_DEVICE = "cuda"
+elif torch.backends.mps.is_available():
+    DEFAULT_DEVICE = "mps"
+else:
+    DEFAULT_DEVICE = "cpu"
+
 MODEL_NAME = "microsoft/Phi-3.5-mini-instruct"
 
 class ModelLoader:
@@ -11,10 +18,10 @@ class ModelLoader:
 
     def get_model(self):
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            torch_dtype=torch.float16,
+            model_name,
+            torch_dtype=torch.float16 if device == "cuda" else None,
+            device_map="auto" if device == "cuda" else None,
         )
-        model.to(self.device)
         model.eval()
 
         return model
