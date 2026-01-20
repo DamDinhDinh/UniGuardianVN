@@ -23,6 +23,7 @@ tokenizer = model_loader.get_tokenizer()
 model = model_loader.get_model()
 masked_processor = MaskProcessor()
 
+print("prompt list length", len(prompt_list))
 for iterator, prompt_data in enumerate(prompt_list):
     print(f"Input {iterator}: label", prompt_data.label)
 
@@ -35,8 +36,8 @@ for iterator, prompt_data in enumerate(prompt_list):
             do_sample=True,
             temperature=0.1,
             top_p=1.0,
-            max_new_tokens=256,
-            min_new_tokens=16,
+            max_new_tokens=64,
+            min_new_tokens=8,
             return_dict_in_generate=True,
             output_logits=True,
         )
@@ -67,6 +68,7 @@ for iterator, prompt_data in enumerate(prompt_list):
             tokenizer,
             prompt_data
         )[:args.num_masks]
+        print("masked data length", len(masked_data))
 
         for i, masked in enumerate(masked_data):
             masked_inputs = tokenizer(masked.prompt, return_tensors="pt").to(model_loader.device)
@@ -74,18 +76,24 @@ for iterator, prompt_data in enumerate(prompt_list):
             print(f"Masked prompt {i}: \n", masked.prompt)
             print("\n")
 
-            masked_out = model.generate(
-                **masked_inputs,
-                do_sample=True,
-                temperature=0.1,
-                top_p=1.0,
-                max_new_tokens=256,
-                min_new_tokens=16,
-                return_dict_in_generate=True,
-                output_logits=True,
+            masked_prompt_len = masked_inputs.input_ids.shape[1]
+            forced_ids = torch.cat(
+                [
+                    masked_inputs.input_ids,
+                    base_generated_ids.unsqueeze(0)
+                ],
+                dim=1
             )
+            attention_mask = torch.ones_like(forced_ids)
+            masked_out = model(
+                input_ids=forced_ids,
+                attention_mask=attention_mask,
+                return_dict=True
+            )
+            masked_logits_seq = masked_out.logits[
+                :, masked_prompt_len - 1: masked_prompt_len - 1 + base_logits_len, :
+            ]
 
-            masked_logits_seq = masked_out.logits
             masked_logits_len = len(masked_logits_seq)
 
             masked_prompt_length = masked_inputs.input_ids.shape[1]
@@ -107,9 +115,11 @@ for iterator, prompt_data in enumerate(prompt_list):
 
             base_gen_ids = base_out.sequences[0][-base_logits_len:]
             for j in range(k):
-                token_id = base_gen_ids[j].item()
-                Lb_j = base_logits_seq[j][0][token_id]
-                Li_j = masked_logits_seq[j][0][token_id]
+                token_id = base_generated_ids[j].item()
+
+                Lb_j = base_logits_seq[j][0, token_id]
+                Li_j = masked_logits_seq[0, j, token_id]
+
                 diff = torch.sigmoid(Li_j) - torch.sigmoid(Lb_j)
                 scores.append(diff ** 2)
 

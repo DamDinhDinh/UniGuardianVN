@@ -23,6 +23,7 @@ class ModelLoader:
             torch_dtype=torch.float16 if self.device == "cuda" else None,
             device_map=device_map,
         )
+        print(f"model {self.model_name} {self.device}")
         if device_map is None:
             model.to(self.device)
         model.eval()
